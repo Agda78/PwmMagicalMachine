@@ -8,99 +8,238 @@
 *   Builder of board: ST Microelectronics
 */
 
-#include "mbed.h"
+#include "mbed.h"  
+#include <cstdint>
 
-/*          CONSTANT AREA           */
-//Declaration of PINOUT configuration
+#define PwmPin PC_7
+#define FrUpdate 200ms
+#define MainSleep 5000ms
+#define ShellDelay 30ms
 
-#define PWMLEDPIN  PC_7    //Pin of pwm
-#define ANALOGINPIN PA_0    //Pin of potentiometer
-#define BUTTONPIN   PB_5    //Pin D4 for digital Input
-
-//Declaration of MaxPeriod for the management of it
-//(We can set all the period that we want)
-
-#define MAXPERIOD   10  //Max period of pwm in [us]
-#define MINPERIOD   1   //Min period of pwm in [us]
-#define NUMDIVISIONI 10 //Number of division in the choiced range (Choice a NUMDIVISIONI that give a integer number at the division [listen ButtonThread])
-
-//Frequency of operztions (Thread in this case)
-#define FRAGGIORNAMENTO 200    //Frequency for the update of pwm data
-#define FRBUTTON    100         //Frequency for reduce noice effect
-#define FRDISPLAY   1500        //Print Frequency of generic data
-
-
-/*           MANAGMENT AREA           */
-//Declaration for the pwm managment struct
 typedef struct{
-    int period;
-    float duty_cicle;
-}pwm_manager;
+        uint32_t period; //Period in [us]
+        float duty_cicle;   //Duty cicle in [%]
+    }pwm_manager;
 
-static pwm_manager manager; //Followed variable for managment of pwm parameter
+static BufferedSerial serial(USBTX, USBRX); //Set serial comunication
+PwmOut pinPwm(PwmPin);
 
-/*          THREAD AREA           */
-//Thread Function for the managment of a button
-void buttonThread(){
-    //This function manages a period update button
+Thread shellThread;
+Thread pwmManagerThread;
 
-    DigitalIn button(BUTTONPIN);
-    int delta = (MAXPERIOD - MINPERIOD + 1)/NUMDIVISIONI;
-    int counter = MAXPERIOD - MINPERIOD + 1;
+static pwm_manager led;
 
-    while(1){
-        if(button.read() == 1){
+void shellThd(){ //Method for managment of a shell
+    //Manager of shell 
+        int scelta = 0;
+        char menu[] = "\n--------[MENU]--------\n1.Set Period [us]\n2.Set Duty Cicle [%]\n3.Print Current Status\nChoice: ";
+        
+        char periodMessage[] = "\n--------[OPTIONS]--------\n+) Period + 1 [us]\n-) Period - 1 [us]\n0) Period = 1 [us]\n1) Period + 2 [us]\n2) Period + 5 [us]\n3) Period + 10 [us]\n4) Period + 100 [us]\n5) Period + 1000 [us]\n6) Period + 10 [ms]\n7) Period + 100 [ms]\n8) Period + 1000 [ms]\nD) Period = 10 [us]\nC) Period = 100 [us]\nM) Period = 1000 [us]\nE) EXIT FROM PERIOD SETTING\nValue: ";
+
+        char dutyMessage[] = "\n--------[OPTIONS]--------\n+) Duty + 1 [%]\n-) Duty - 1 [%]\n0) Duty = 1 [%]\n1) Duty + 2 [%]\n2) Duty + 5 [%]\n3) Duty + 10 [%]\n4) Duty + 50 [%]\nD) Duty = 10 [%]\nC) Duty = 50 [%]\nM) Duty = 100 [%]\nE) EXIT FROM DUTY SETTING\nValue: ";
+
+        char accapo[] = "\n";
+
+
+        char errore[] = "No option in the list\n";
+
+        char *buff = new char[1];
+        int percent;
+
+        while(1){
             
-            counter = (counter + 1)%NUMDIVISIONI;
+            serial.write(menu, sizeof(menu));
+            serial.read(buff, sizeof(buff));
+            serial.write(buff, sizeof(buff));
+            serial.write(accapo, sizeof(accapo));
 
-            manager.period = MINPERIOD + (counter * delta);
+            switch(*buff){
+                case '1':
+                    printf("\n[CURRENT] Period value: %d\n", led.period);
+                    do{
+                        serial.write(periodMessage, sizeof(periodMessage));
+                        serial.read(buff, sizeof(buff));
+                        serial.write(buff, sizeof(buff));
+                        switch (*buff) {
+                            case '+':
+                                led.period++;
+                                break;
+                            case '-':
+                                if(led.period > 1){
+                                    led.period--;
+                                }else{
+                                    printf("\nMinimum value\n");
+                                }
+                                break;
+                            case '0':
+                                led.period = 1;
+                                break;
 
-            //printf("[UPDATE] Updated period at: %d\n", manager.period); //Print for eventually debugging
+                            case '1':
+                                led.period += 2;
+                                break;
+                                
+                            case '2':
+                                led.period += 5;
+                                break;
+                            
+                            case '3':
+                                led.period += 10;
+                                break;
+                            
+                            case '4':
+                                led.period += 100;
+                                break;
+                            case '5':
+                                led.period += 1000;
+                                break;
+                            case '6':
+                                led.period += 10000;
+                                break;
+                            case '7':
+                                led.period += 100000;
+                                break;
+                            case '8':
+                                led.period += 1000000;
+                                break;
+                            case 'D':
+                                led.period = 10;
+                                break;
+                            
+                            case 'C':
+                                led.period = 100;
+                                break;
+                            
+                            case 'M':
+                                led.period = 1000;
+                                break;
+                            
+                            case 'E':
+                                printf("\n[UPDATE] Period: %d\n", led.period);
+                                break;
 
-            while(button == 1){}
+                            default:
+                                printf("\nValue not recognized\nRetry and insert a value in [0,9] or + and - [follow the menu]\n");
+                            }
+                            if(*buff != 'E'){
+                                printf("\n[UPDATED] Period value: %d\n", led.period);
+                            }
+                        }while(*buff != 'E');
+                        break;
+                    
+                case '2':
+                    percent = (int)(led.duty_cicle * 100.0f);
+                    printf("\n[CURRENT] Duty value: %d\n", percent);
+                    do{
+                        serial.write(dutyMessage, sizeof(dutyMessage));
+                        serial.read(buff, sizeof(buff));
+                        serial.write(buff, sizeof(buff));
+                        switch (*buff) {
+                            case '+':
+                                percent++;
+                                break;
+                            case '-':
+                                if(led.period > 0){
+                                    percent--;
+                                }else{
+                                    printf("\nMinimum value\n");
+                                }
+                                break;
+                            case '0':
+                                percent = 1;
+                                break;
+
+                            case '1':
+                                percent += 2;
+                                break;
+                                
+                            case '2':
+                                percent += 5;
+                                break;
+                            
+                            case '3':
+                                percent += 10;
+                                break;
+                            
+                            case '4':
+                                percent += 50;
+                                break;
+                            
+                            case 'D':
+                                percent = 10;
+                                break;
+                            
+                            case 'C':
+                                percent = 50;
+                                break;
+                            
+                            case 'M':
+                                percent = 100;
+                                break;
+                            
+                            case 'E':
+                                printf("\n[UPDATE] Duty: %d\n", percent);
+                                break;
+
+                            default:
+                                printf("\nValue not recognized\nRetry and insert a value in [0,9] or + and - [follow the menu]\n");
+                            }
+                            
+                            led.duty_cicle = (float)((float)(percent)/100.0f);
+
+                            if(*buff != 'E'){
+                                printf("\n[UPDATED] Duty value: %d\n", percent);
+                            }
+
+                        }while(*buff != 'E');
+                
+                    break;
+
+                case '3':
+                    printf("\n--------[INFO PWM]--------\n");
+                    if(led.period < 100000){
+                        printf("Period: %d [us]\n", led.period);
+                    }else{
+                            printf("Period: %d [ms]\n",(int) (led.period/1000));
+                    }
+                    printf("Duty Cicle: %d [%%]\n\n", (int)(led.duty_cicle * 100.0f));
+                    break;
+
+                default:
+                    serial.write(errore, sizeof(errore));  
+            }
+
         }
-        thread_sleep_for(FRBUTTON);
-    }
-}
+        ThisThread::sleep_for(ShellDelay);
+} 
 
-void displayValuesThread(){
-    //Function for the printing of operation
+void pwmManagerThd(){ //Method for control and set the pwm parameters
+    //Manager of pwm
+    float previusDutyCicle = 0.0f;
     while(1){
-        printf("[CheckSum] Period: %d [us]\tDuty Cicle: %d [%%]\n", manager.period, (int) (manager.duty_cicle*100.0f));
-        thread_sleep_for(FRDISPLAY);
+        if(pinPwm.read_period_us() != led.period){
+            pinPwm.period_us(led.period);
+        }
+        if(led.duty_cicle != previusDutyCicle){
+            previusDutyCicle = led.duty_cicle;
+            pinPwm.write(led.duty_cicle);
+        }
+        ThisThread::sleep_for(FrUpdate);
     }
-}
+} 
 
-Thread buttonThd;
-Thread displayValuesThd;
 
 int main()
 {
-    //INIZIALIZZATION OF FOLLOWED VARIABLE
-    manager.period = MAXPERIOD;
-    manager.duty_cicle = 0.6f;
+    shellThread.start(shellThd);
+    pwmManagerThread.start(pwmManagerThd);
 
-    //STARTING OF THREADS
-    buttonThd.start(buttonThread);  //Button Thread
-    displayValuesThd.start(displayValuesThread);    //Display Thread
+    led.period = 10;    //10 us
+    led.duty_cicle = 0.5f; //50 %
+     while(1){
 
-    //PERIFERAS DECLARATION AREA
-    PwmOut pwmLed(PWMLEDPIN);  //Led Pwm
-    AnalogIn poten(ANALOGINPIN);    //Potentiometer for dutycicle regulation
-
-    while (true) {
-        if ((int)((poten.read()+ 0.01) * 100.0f) != (int) (manager.duty_cicle * 100.0f)) {
-            manager.duty_cicle = poten.read() + 0.01;
-            pwmLed.write(manager.duty_cicle);
-            //printf("[UPDATE] Updating Duty Cicle: %d [%%] \n", (int) (manager.duty_cicle * 100.0f)); //Eventually debugging print
-        }
-        if (pwmLed.read_period_us() != manager.period) {
-            pwmLed.period_us(manager.period);
-            //printf("[UPDATE] Updating Period: %d [us]\n", pwmLed.read_period_us()); //Eventually debugging print
-        }
-
-        thread_sleep_for(FRAGGIORNAMENTO);
-    }
+         ThisThread::sleep_for(MainSleep);
+     }    
 }
 
 
