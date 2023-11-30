@@ -78,7 +78,7 @@ int main()
 {
     //INIZIALIZZATION OF FOLLOWED VARIABLE
     manager.period = MAXPERIOD;
-    manager.duty_cicle = 0.5f;
+    manager.duty_cicle = 0.6f;
 
     //STARTING OF THREADS
     buttonThd.start(buttonThread);  //Button Thread
