@@ -1,13 +1,10 @@
 # PwmSerialControl
-A PWM manager with Serial Comunication
-This applicative is realized with MBED OS 6
-Developed on Mbed Studio
-and tested on a ST Board: NUCLEO - G474RE
+A PWM Manager with Serial Communication
 
-!Warning!
-*Control that your board supports the variable
-format uint32_t*
+This application is developed using MBED OS 6 on Mbed Studio and tested on an ST Board: NUCLEO-G474RE.
+
+Warning! Ensure that your board supports the uint32_t data type.
 
 NO PRESETTINGS!!!
 
-P.S. Sorry for my poor english
+P.S. Sorry for my poor English.
